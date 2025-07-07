@@ -11,6 +11,7 @@ import (
 	"time"
 	"user-management/config"
 	"user-management/database"
+	"user-management/pkg/mqtt"
 	"user-management/pkg/sensor"
 	"user-management/pkg/user"
 	"user-management/shared/middleware"
@@ -29,10 +30,38 @@ func main() {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
 
+	// Initialize services
+	userRepo := user.NewRepository(db.DB)
+	userService := user.NewService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHours)
+
+	sensorRepo := sensor.NewRepository(db.DB)
+	sensorService := sensor.NewService(sensorRepo)
+
+	// Initialize MQTT broker
+	mqttConfig := &mqtt.Config{
+		Broker:   cfg.MQTT.Broker,
+		Port:     cfg.MQTT.Port,
+		Username: cfg.MQTT.Username,
+		Password: cfg.MQTT.Password,
+		ClientID: cfg.MQTT.ClientID,
+		QoS:      cfg.MQTT.QoS,
+	}
+
+	mqttBroker := mqtt.NewMQTTBroker(mqttConfig, sensorService)
+
+	// Start MQTT broker
+	if err := mqttBroker.Start(); err != nil {
+		log.Printf("Warning: Failed to start MQTT broker: %v", err)
+		log.Println("Continuing without MQTT support...")
+	} else {
+		log.Println("MQTT broker started successfully")
+		defer mqttBroker.Stop()
+	}
+
 	// Setup HTTP server
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:      setupRoutes(db, cfg),
+		Handler:      setupRoutes(db, cfg, userService, sensorService),
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,
@@ -65,17 +94,11 @@ func main() {
 }
 
 // setupRoutes configures HTTP routes
-func setupRoutes(db *database.DB, cfg *config.Config) http.Handler {
+func setupRoutes(db *database.DB, cfg *config.Config, userService user.Service, sensorService sensor.Service) http.Handler {
 	mux := http.NewServeMux()
 
-	// Initialize user domain
-	userRepo := user.NewRepository(db.DB)
-	userService := user.NewService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHours)
+	// Create handlers with the services passed from main
 	userHandler := user.NewHandler(userService)
-
-	// Initialize sensor domain
-	sensorRepo := sensor.NewRepository(db.DB)
-	sensorService := sensor.NewService(sensorRepo)
 
 	// Create auth service adapter for sensor handler
 	authService := user.NewAuthServiceAdapter(userService)

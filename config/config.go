@@ -7,6 +7,16 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// MQTTConfig holds MQTT broker configuration
+type MQTTConfig struct {
+	Broker   string `toml:"broker"`
+	Port     int    `toml:"port"`
+	Username string `toml:"username"`
+	Password string `toml:"password"`
+	ClientID string `toml:"client_id"`
+	QoS      byte   `toml:"qos"`
+}
+
 // Config holds all configuration for the application
 type Config struct {
 	Server    ServerConfig    `toml:"server"`
@@ -14,6 +24,7 @@ type Config struct {
 	JWT       JWTConfig       `toml:"jwt"`
 	App       AppConfig       `toml:"app"`
 	RateLimit RateLimitConfig `toml:"rate_limit"`
+	MQTT      MQTTConfig      `toml:"mqtt"`
 }
 
 // ServerConfig holds server configuration
